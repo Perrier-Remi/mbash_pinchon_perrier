@@ -1,7 +1,3 @@
-//
-// Created by remi on 16/01/23.
-//
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -23,6 +19,7 @@ int main(int argc, char** argv) {
 }
 
 void mbash() {
-    printf("Execute: %s", cmd);
-    system(cmd);
+    char *argv[] = {"ls", "-l", "/"};
+    char *envp[] = {NULL};
+    execve("/bin/ls", argv, envp);
 }
