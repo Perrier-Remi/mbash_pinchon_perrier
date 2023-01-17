@@ -10,13 +10,16 @@
 char cmd[MAXLI];
 char path[MAXLI];
 int pathidx;
+extern char **environ;
+
 char *which(char *cmd);
+
 void mbash();
+
 void commandeGenerale();
 
 
-
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     while (1) {
         printf("Commande: ");
         fgets(cmd, MAXLI, stdin);
@@ -55,7 +58,7 @@ char *which(char *cmd) {
         command_path = NULL;
     }
     printf("Command not found\n");
-    execlp("","");
+    execlp("", "");
 }
 
 void commandeGenerale() {
@@ -66,23 +69,20 @@ void commandeGenerale() {
     cmd_copy = strtok(cmd_copy, "\n");
     int i = 0;
     char *token = strtok(cmd_copy, " ");
+
     while (token != NULL) {
         argv[i] = token;
         i++;
         token = strtok(NULL, " ");
     }
     argv[i] = NULL;
-
     char *str = which(argv[0]);
 
-    printf(" :: %s ::",str);
-
-    int exec_result = execve(str, argv, envp);
+    int exec_result = execve(str, argv, environ);
     if (exec_result == -1) {
         perror("Error executing command");
     }
-    free(cmd_copy);
     free(str);
+    free(cmd_copy);
+
 }
-
-
