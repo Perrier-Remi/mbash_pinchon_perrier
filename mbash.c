@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <termios.h>
 
 /* constantes */
 #define MAXLI 2048
@@ -26,8 +27,9 @@ void cd();
 void pwd();
 void history();
 int replace_$$_pid();
-
 int replace_tild_home();
+int getHisoryLength();
+char* getHistory(int index);
 
 /* commande du prompt */
 void prompt();
@@ -36,15 +38,105 @@ int main(int argc, char** argv) {
 
     home = getenv("HOME");
     strcpy(cheminHistory, home);
-    strncat(cheminHistory, "/.mbash_history", strlen("/.mbash_history"));
-
+    strncat(cheminHistory, "/.mbash_history", strlen("/.mbash_history")+1);
 
     while (1) {
-        prompt();
-        fgets(cmd, MAXLI, stdin);
+        int tailleCommande = 0;
 
-        //ligne permettant de supprimer le retour à la ligne à la fin de la variable cmd
-        cmd[strcspn(cmd, "\n")] = 0;
+        struct termios term, term_orig;
+
+        tcgetattr(STDIN_FILENO, &term_orig); // sauvegarder les paramètres d'entrée originaux
+        term = term_orig;
+        term.c_lflag &= ~(ICANON | ECHO); // désactiver l'entrée canonique et l'écho
+        term.c_cc[VMIN] = 1; // un seul caractère est nécessaire pour retourner
+        term.c_cc[VTIME] = 0; // bloquer jusqu'à ce qu'un caractère soit lu
+        tcsetattr(STDIN_FILENO, TCSANOW, &term); // appliquer les nouveaux paramètres
+
+        prompt();
+        int continu = 1;
+        int posCurseur = 0;
+
+        for (int i = 0; i < MAXLI; ++i) {
+            cmd[i] = '\0';
+        }
+
+        int nbHistory = getHisoryLength()-1;
+
+        while (continu) {
+            char c = getchar();
+            switch (c) {
+                case 27:
+                    getchar();
+                    switch (getchar()) {
+                        case 'A':
+                            // flèche du haut
+                            if (nbHistory > 0) {
+                                // supprime l'affichage déjà présent jusqu'au prompt
+                                while (tailleCommande > 0) {
+                                    printf("\b \b");
+                                    cmd[tailleCommande--] = '\0';
+                                    posCurseur--;
+                                }
+                                nbHistory--;
+                                char* commande_history = getHistory(nbHistory);
+                                commande_history[strcspn(commande_history, "\n")] = 0;
+                                char c = commande_history[tailleCommande];
+                                // imprime l'ancienne commande pésente dans l'historique et l'affecte dans la variable cmd
+                                while (c != '\0') {
+                                    putchar(c);
+                                    cmd[tailleCommande] = c;
+                                    tailleCommande++;
+                                    posCurseur++;
+                                    c = commande_history[tailleCommande];
+                                }
+                            }
+                            break;
+                        case 'B':
+                            // flèche du bas
+                            if (nbHistory < getHisoryLength()-1) {
+                                // supprime tout l'affichage
+                                while (tailleCommande > 0) {
+                                    printf("\b \b");
+                                    cmd[--tailleCommande] = '\0';
+                                    posCurseur--;
+                                }
+                                nbHistory++;
+                                char* commande_history = getHistory(nbHistory);
+                                commande_history[strcspn(commande_history, "\n")] = 0;
+                                char c = commande_history[tailleCommande];
+                                while (c != '\0') {
+                                    putchar(c);
+                                    cmd[tailleCommande] = c;
+                                    tailleCommande++;
+                                    posCurseur++;
+                                    c = commande_history[tailleCommande];
+                                }
+                            }
+                            break;
+                    }
+                    break;
+                case '\x7f' :
+                case '\x08' :
+                    // si la touche backspace est appuyée, on supprime un caractère de l'affichage
+                    if (tailleCommande > 0) {
+                        printf("\b \b");
+                        cmd[--tailleCommande] = '\0';
+
+                    }
+                    break;
+                case '\n':
+                    continu = 0;
+                    putchar(c);
+                    break;
+                default :
+                    putchar(c);
+                    cmd[tailleCommande] = c;
+                    tailleCommande++;
+                    posCurseur++;
+                    break;
+            }
+        }
+        tcsetattr(STDIN_FILENO, TCSANOW, &term_orig); // rétablir les paramètres d'entrée originaux
 
         if (*cmd != 0) {
             mbash();
@@ -55,15 +147,6 @@ int main(int argc, char** argv) {
 
 void mbash() {
 
-    /* remplace $$ par le pid de mbash */
-    replace_$$_pid(cmd);
-    /* remplace ~ par le home de l'utilisateur */
-    replace_tild_home(cmd);
-
-    char *arguments = NULL;
-    char *cmd_copy = strdup(cmd);
-    char *commande = strtok_r(cmd_copy, " ", &arguments);
-
     /* partie servant pour la commande history de mbash */
     FILE *file;
     file = fopen(cheminHistory, "a");
@@ -72,6 +155,14 @@ void mbash() {
     }
     fclose(file);
 
+    /* remplace $$ par le pid de mbash */
+    replace_$$_pid(cmd);
+    /* remplace ~ par le home de l'utilisateur */
+    replace_tild_home(cmd);
+
+    char *arguments = NULL;
+    char *cmd_copy = strdup(cmd);
+    char *commande = strtok_r(cmd_copy, " ", &arguments);
 
     /* commandes built-in */
     if (strcmp(commande, "cd")==0) {
@@ -255,6 +346,40 @@ void history() {
     fclose(historique);
 }
 
+int getHisoryLength() {
+    char line[256];
+    int index = 1;
+
+    FILE *historique;
+    historique = fopen(cheminHistory, "r");
+
+    while (fgets(line, sizeof(line), historique)) {
+        index++;
+    }
+
+    fclose(historique);
+    return index;
+}
+
+char* getHistory(int index) {
+    char line[256];
+    int i = 1;
+    FILE *historique;
+    historique = fopen(cheminHistory, "r");
+
+    while (fgets(line, sizeof(line), historique)) {
+        if (i == index) {
+            char* retour = (char*) malloc(sizeof(char) * (strlen(line) + 1));
+            strcpy(retour, line);
+            fclose(historique);
+            return retour;
+        }
+        i++;
+    }
+    fclose(historique);
+    return NULL;
+}
+
 /* affichage du prompt */
 void prompt() {
     char *chemin = getcwd(path, 1000);
@@ -282,5 +407,5 @@ void prompt() {
         car = chemin[indexChemin];
     }
 
-    printf("%s $ ", dernierDossier);
+    printf(" %s $ ", dernierDossier);
 }
