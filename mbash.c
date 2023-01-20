@@ -38,9 +38,10 @@ int main(int argc, char** argv) {
 
     home = getenv("HOME");
     strcpy(cheminHistory, home);
-    strncat(cheminHistory, "/.mbash_history", strlen("/.mbash_history")+1);
+    strncat(cheminHistory, "/.bash_history", strlen("/.bash_history")+1);
 
     while (1) {
+
         int tailleCommande = 0;
 
         struct termios term, term_orig;
@@ -70,7 +71,7 @@ int main(int argc, char** argv) {
                     switch (getchar()) {
                         case 'A':
                             // flèche du haut
-                            if (nbHistory > 0) {
+                            if (nbHistory > 1) {
                                 // supprime l'affichage déjà présent jusqu'au prompt
                                 while (tailleCommande > 0) {
                                     printf("\b \b");
@@ -138,6 +139,7 @@ int main(int argc, char** argv) {
         }
         tcsetattr(STDIN_FILENO, TCSANOW, &term_orig); // rétablir les paramètres d'entrée originaux
 
+
         if (*cmd != 0) {
             mbash();
         }
@@ -177,7 +179,7 @@ void mbash() {
     else if (strcmp(commande, "history")==0) {
         history();
     }
-    /* la commande n'est pas une commande built-in */
+        /* la commande n'est pas une commande built-in */
     else  {
         pid_t pid = fork();
         if (pid == 0) {
@@ -377,7 +379,7 @@ char* getHistory(int index) {
         i++;
     }
     fclose(historique);
-    return NULL;
+    return "";
 }
 
 /* affichage du prompt */
